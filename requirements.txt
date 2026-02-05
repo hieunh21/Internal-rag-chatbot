@@ -11,8 +11,8 @@ qdrant-client==1.12.1
 # PDF Processing
 pdfplumber==0.11.4
 
-# MySQL Database
-pymysql==1.1.0
+# PostgreSQL Database
+psycopg2-binary==2.9.9
 
 # LLM
 openai==1.30.1

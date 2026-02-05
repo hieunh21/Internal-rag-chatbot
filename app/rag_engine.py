@@ -125,28 +125,18 @@ class RAGEngine:
         
         return results_with_similarity
     
-    def filter_by_threshold(
-        self, 
-        results: List[Tuple],
-        threshold: float = None
-    ) -> List[Tuple]:
+    def filter_by_threshold(self, results: List[Tuple]) -> List[Tuple]:
         """
         Lọc kết quả theo ngưỡng similarity
         
         Args:
             results: List[(Document, score)]
-            threshold: Ngưỡng tối thiểu (default: từ config)
             
         Returns:
             List[(Document, score)] đã lọc
         """
-        threshold = threshold or settings.SIMILARITY_THRESHOLD
-        
-        filtered = [
-            (doc, score) for doc, score in results
-            if score >= threshold
-        ]
-        
+        threshold = settings.SIMILARITY_THRESHOLD
+        filtered = [(doc, score) for doc, score in results if score >= threshold]
         return filtered
     
     # ================================================================

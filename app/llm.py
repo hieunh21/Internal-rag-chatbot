@@ -2,12 +2,10 @@
 # ingest.py  → xây trí nhớ
 # rag.py     → tìm đoạn liên quan
 # llm.py     → viết câu trả lời
-import os
 import httpx
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.config import settings
 
 # Tạo httpx client không có proxies
 http_client = httpx.Client(
@@ -15,8 +13,8 @@ http_client = httpx.Client(
 )
 
 client = OpenAI(
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    base_url="https://openrouter.ai/api/v1",
+    api_key=settings.OPENROUTER_API_KEY,
+    base_url=settings.OPENROUTER_BASE_URL,
     http_client=http_client
 )
 
@@ -31,31 +29,17 @@ def call_llm(prompt: str) -> str:
         Câu trả lời từ LLM
     """
     try:
-        # Thử các model free theo thứ tự
-        models = [
-            "mistralai/devstral-2512:free",
-        ]
-        
-        last_error = None
-        for model in models:
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2,
-                    max_tokens=500
-                )
-                # Lấy response và loại bỏ special tokens
-                answer = response.choices[0].message.content
-                # Strip các special tokens
-                answer = answer.replace("[/s]", "").replace("</s>", "").replace("[/INST]", "").replace("[INST]", "").strip()
-                return answer
-            except Exception as e:
-                last_error = e
-                continue
-        
-        # Nếu tất cả đều fail
-        return f"Lỗi khi gọi LLM: {str(last_error)}"
+        response = client.chat.completions.create(
+            model=settings.MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=settings.TEMPERATURE,
+            max_tokens=settings.MAX_TOKENS
+        )
+        # Lấy response và loại bỏ special tokens
+        answer = response.choices[0].message.content
+        # Strip các special tokens
+        answer = answer.replace("[/s]", "").replace("</s>", "").replace("[/INST]", "").replace("[INST]", "").strip()
+        return answer
         
     except Exception as e:
         return f"Lỗi khi gọi LLM: {str(e)}"

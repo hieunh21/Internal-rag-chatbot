@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION_NAME: str = "abc_corp_docs"
     
-    # ==================== MYSQL SETTINGS ====================
-    MYSQL_HOST: str = "localhost"
-    MYSQL_PORT: int = 3306
-    MYSQL_DATABASE: str = "rag_chatbot"
-    MYSQL_USER: str = "root" 
-    MYSQL_PASSWORD: Optional[str] = None 
+    # ==================== POSTGRESQL SETTINGS (from .env) ====================
+    POSTGRES_HOST: str
+    POSTGRES_PORT: int
+    POSTGRES_DATABASE: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
     
     # ==================== RAG PARAMETERS ====================
     # Số lượng documents retrieve (tăng để lấy nhiều context hơn)
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None
     
     # Model name (free tier)
-    MODEL_NAME: str = "mistralai/devstral-2512:free"
+    MODEL_NAME: str = "z-ai/glm-4.5-air:free"
     
     # Generation parameters
     TEMPERATURE: float = 0.2  # 0 = deterministic, 1 = creative

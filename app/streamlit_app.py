@@ -157,10 +157,6 @@ def init_session_state():
     
     if "total_latency" not in st.session_state:
         st.session_state.total_latency = 0
-    
-    # Dev mode toggle (ẩn mặc định)
-    if "dev_mode" not in st.session_state:
-        st.session_state.dev_mode = False
 
 init_session_state()
 
@@ -306,6 +302,13 @@ def is_authenticated() -> bool:
     return st.session_state.access_token is not None and st.session_state.current_user is not None
 
 
+def is_admin() -> bool:
+    """Kiểm tra user có phải admin không"""
+    if not is_authenticated():
+        return False
+    return st.session_state.current_user.get("role") == "admin"
+
+
 # ================================================================
 # AUTH UI
 # ================================================================
@@ -401,15 +404,25 @@ def render_sidebar():
         # ==================== USER INFO ====================
         if is_authenticated():
             user = st.session_state.current_user
+            user_role = user.get('role', 'user')
+            
+            # Chọn màu gradient theo role
+            if user_role == "admin":
+                gradient = "linear-gradient(135deg, #d32f2f 0%, #c2185b 100%)"
+                role_badge = '<span style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">ADMIN</span>'
+            else:
+                gradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                role_badge = ""
+            
             st.markdown(f"""
             <div style="
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: {gradient};
                 padding: 1rem;
                 border-radius: 10px;
                 color: white;
                 margin-bottom: 1rem;
             ">
-                <div style="font-size: 0.9rem; opacity: 0.9;">Xin chào,</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">Xin chào, {role_badge}</div>
                 <div style="font-size: 1.1rem; font-weight: bold;">{user.get('full_name', user.get('email'))}</div>
                 <div style="font-size: 0.8rem; opacity: 0.8;">{user.get('email')}</div>
             </div>
@@ -420,6 +433,145 @@ def render_sidebar():
                 st.rerun()
             
             st.divider()
+            
+            # ==================== ADMIN PANEL ====================
+            if is_admin():
+                st.subheader("Admin Panel")
+                
+                # System Statistics
+                with st.expander("System Statistics", expanded=False):
+                    stats_data = api_request("GET", "/stats", require_auth=True, timeout=10)
+                    
+                    if stats_data:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Total Queries", stats_data.get("total_queries", 0))
+                            st.metric("Grounded", stats_data.get("grounded_queries", 0))
+                        with col2:
+                            st.metric("Grounded Rate", f"{stats_data.get('grounded_rate', 0):.1f}%")
+                            st.metric("Avg Latency", f"{stats_data.get('avg_latency_ms', 0):.0f}ms")
+                        
+                        st.metric("Active Sessions", stats_data.get("active_sessions", 0))
+                    else:
+                        st.warning("Không thể tải thống kê")
+                
+                # Reload Index
+                with st.expander("Manage Index", expanded=False):
+                    st.caption("Reload vector database sau khi cập nhật tài liệu")
+                    if st.button("Reload Qdrant Index", use_container_width=True, type="primary"):
+                        with st.spinner("Đang reload index..."):
+                            result = api_request("POST", "/reload-index", require_auth=True, timeout=30)
+                            if result:
+                                st.success(f"Index reloaded thành công!")
+                                st.caption(f"Thời gian: {result.get('timestamp', 'N/A')}")
+                            else:
+                                st.error("Reload thất bại")
+                
+                # All Sessions (Admin view)
+                with st.expander("All User Sessions", expanded=False):
+                    all_sessions = api_request("GET", "/sessions", require_auth=True, timeout=10)
+                    
+                    if all_sessions:
+                        sessions_list = all_sessions.get("sessions", [])
+                        st.caption(f"Tổng: {all_sessions.get('total_sessions', 0)} sessions")
+                        
+                        for sess in sessions_list[:15]:
+                            sess_id = sess.get("session_id", "")
+                            title = sess.get("title", "No title")
+                            msg_count = sess.get("message_count", 0)
+                            
+                            # Parse user info từ session_id
+                            if sess_id.startswith("user_"):
+                                parts = sess_id.split("_")
+                                user_id = parts[1] if len(parts) > 1 else "?"
+                                st.text(f"User #{user_id}: {title} ({msg_count} msgs)")
+                            else:
+                                st.text(f"Guest: {title} ({msg_count} msgs)")
+                    else:
+                        st.warning("Không thể tải sessions")
+                
+                # ==================== DOCUMENT MANAGEMENT ====================
+                with st.expander("Document Management", expanded=False):
+                    st.caption("Quản lý tài liệu trong Knowledge Base")
+                    
+                    # Upload document
+                    st.markdown("**Upload tài liệu mới:**")
+                    uploaded_file = st.file_uploader(
+                        "Chọn file (PDF, MD, TXT)",
+                        type=["pdf", "md", "txt"],
+                        key="admin_upload"
+                    )
+                    
+                    if uploaded_file is not None:
+                        if st.button("Upload", key="btn_upload", type="primary"):
+                            # Upload file qua API
+                            try:
+                                files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
+                                headers = get_auth_headers()
+                                
+                                response = requests.post(
+                                    f"{API_URL}/admin/upload-document",
+                                    files=files,
+                                    headers=headers,
+                                    timeout=30
+                                )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    st.success(f"Upload thành công: {result.get('filename')}")
+                                    st.info("Nhấn 'Rebuild Index' để cập nhật vector database")
+                                else:
+                                    error_msg = response.json().get("detail", "Upload thất bại")
+                                    st.error(f"Lỗi: {error_msg}")
+                            except Exception as e:
+                                st.error(f"Lỗi: {str(e)}")
+                    
+                    st.markdown("---")
+                    
+                    # List documents
+                    st.markdown("**Danh sách tài liệu:**")
+                    docs_data = api_request("GET", "/admin/documents", require_auth=True, timeout=10)
+                    
+                    if docs_data:
+                        documents = docs_data.get("documents", [])
+                        st.caption(f"Tổng: {docs_data.get('total', 0)} files")
+                        
+                        if documents:
+                            for doc in documents:
+                                col1, col2 = st.columns([3, 1])
+                                with col1:
+                                    st.text(f"{doc['file_type']} | {doc['filename']} ({doc['size_kb']} KB)")
+                                with col2:
+                                    if st.button("Xóa", key=f"del_{doc['filename']}", type="secondary"):
+                                        del_result = api_request(
+                                            "DELETE",
+                                            f"/admin/document/{doc['filename']}",
+                                            require_auth=True,
+                                            timeout=10
+                                        )
+                                        if del_result:
+                                            st.success(f"Đã xóa {doc['filename']}")
+                                            st.rerun()
+                        else:
+                            st.info("Chưa có tài liệu nào")
+                    else:
+                        st.warning("Không thể tải danh sách")
+                    
+                    st.markdown("---")
+                    
+                    # Rebuild Index
+                    st.markdown("**Rebuild Vector Database:**")
+                    st.caption("Cập nhật index sau khi thêm/xóa tài liệu")
+                    
+                    if st.button("Rebuild Index", key="btn_rebuild", type="primary", use_container_width=True):
+                        with st.spinner("Đang rebuild index... (có thể mất vài phút)"):
+                            result = api_request("POST", "/admin/rebuild-index", require_auth=True, timeout=300)
+                            if result:
+                                st.success(f"Rebuild thành công! {result.get('vectors_count', 0)} vectors")
+                            else:
+                                st.error("Rebuild thất bại")
+                
+                st.divider()
         
         # ==================== CHAT HISTORY ====================
         st.subheader("Chat History")
@@ -464,45 +616,12 @@ def render_sidebar():
         
         st.divider()
         
-        # ==================== SESSION INFO ====================
-        # Chỉ hiển thị khi Dev Mode bật
-        if st.session_state.dev_mode:
-            st.subheader("Current Session")
-            st.text(f"ID: {st.session_state.session_id[-15:]}")
-            st.text(f"Messages: {len(st.session_state.messages)}")
-            st.divider()
-        
-        # Statistics - Ẩn mặc định
-        if st.session_state.dev_mode:
-            st.subheader("Statistics")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Queries", st.session_state.total_queries)
-            with col2:
-                grounded_rate = 0
-                if st.session_state.total_queries > 0:
-                    grounded_rate = (st.session_state.grounded_queries / st.session_state.total_queries) * 100
-                st.metric("Grounded", f"{grounded_rate:.0f}%")
-            
-            avg_latency = 0
-            if st.session_state.total_queries > 0:
-                avg_latency = st.session_state.total_latency / st.session_state.total_queries
-            st.metric("Avg Latency", f"{avg_latency:.0f}ms")
-            
-            st.divider()
-        
         # Settings
         st.subheader("Settings")
         
         show_sources = st.checkbox("Show Sources", value=True)
-        # Show Confidence Scores - Chỉ hiện trong Dev Mode
-        if st.session_state.dev_mode:
-            show_scores = st.checkbox("Show Confidence Scores", value=True)
-            show_latency = st.checkbox("Show Latency", value=True)
-        else:
-            show_scores = False
-            show_latency = False
+        show_scores = False
+        show_latency = False
         
         st.divider()
         
@@ -536,45 +655,6 @@ def render_sidebar():
             st.session_state.total_queries = 0
             st.session_state.grounded_queries = 0
             st.session_state.total_latency = 0
-            st.rerun()
-        
-        st.divider()
-        
-        # System Health - Ẩn mặc định
-        if st.session_state.dev_mode:
-            st.subheader("System Health")
-            
-            try:
-                api_url = os.getenv("API_URL", "http://localhost:8000")
-                health_response = requests.get(f"{api_url}/health", timeout=5)
-                
-                if health_response.status_code == 200:
-                    health = health_response.json()
-                    
-                    if health["qdrant_connected"]:
-                        st.success(f"Qdrant: Connected ({health.get('vectors_count', 'N/A')} vectors)")
-                    else:
-                        st.error("Qdrant: Not Connected")
-                    
-                    if health["db_connected"]:
-                        st.success("MySQL: Connected")
-                    else:
-                        st.error("MySQL: Not Connected")
-                    
-                    st.info(f"Model: {health.get('embedding_model', 'N/A')}")
-                    st.info(f"Status: {health.get('status', 'unknown')}")
-                else:
-                    st.error(f"API Error: {health_response.status_code}")
-            except:
-                st.error("Cannot connect to API server")
-            
-            st.divider()
-        
-        # Dev Mode Toggle (ở cuối sidebar)
-        st.markdown("---")
-        dev_mode = st.checkbox("🔧 Developer Mode", value=st.session_state.dev_mode)
-        if dev_mode != st.session_state.dev_mode:
-            st.session_state.dev_mode = dev_mode
             st.rerun()
         
         return show_sources, show_scores, show_latency
@@ -741,10 +821,13 @@ def main():
     
     # Header
     user_name = st.session_state.current_user.get("full_name", "User")
+    user_role = st.session_state.current_user.get("role", "user")
+    admin_badge = '<span style="background: #d32f2f; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-left: 8px;">ADMIN</span>' if user_role == "admin" else ""
+    
     st.markdown(f"""
     <div class="header-container">
         <h1>ABC Corp RAG ChatBot</h1>
-        <p>Xin chào <strong>{user_name}</strong>! Hỏi đáp về chính sách nhân sự, quy trình nghiệp vụ, IT & bảo mật</p>
+        <p>Xin chào <strong>{user_name}</strong>{admin_badge}! Hỏi đáp về chính sách nhân sự, quy trình nghiệp vụ, IT & bảo mật</p>
     </div>
     """, unsafe_allow_html=True)
     

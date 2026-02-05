@@ -25,7 +25,7 @@ Dữ liệu trong thư mục `data/` chỉ là **dữ liệu giả lập** phụ
             +-------------+-------------+
             |                           |
       +-----v-----+              +------v------+
-      |   Qdrant  |              |    MySQL    |
+      |   Qdrant  |              | PostgreSQL  |
       | VectorDB  |              |  (Memory)   |
       +-----------+              +-------------+
 ```
@@ -37,18 +37,17 @@ Dữ liệu trong thư mục `data/` chỉ là **dữ liệu giả lập** phụ
 | Backend API | FastAPI |
 | Frontend | Streamlit |
 | Vector Database | Qdrant |
-| Relational Database | MySQL |
+| Relational Database | PostgreSQL |
 | Embedding Model | BAAI/bge-m3 |
-| LLM | Mistral (qua OpenRouter) |
-| Authentication | JWT |
+| LLM | OpenRouter (configurable) |
+| Authentication | JWT + Bcrypt |
 
 ## Cài đặt
 
 ### Yêu cầu
 
 - Python 3.10+
-- MySQL Server
-- Docker (cho Qdrant)
+- Docker & Docker Compose (cho PostgreSQL, Qdrant, pgAdmin)
 
 ### Bước 1: Clone và cài đặt dependencies
 
@@ -63,11 +62,16 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-### Bước 2: Khởi động Qdrant
+### Bước 2: Khởi động Docker services
 
 ```bash
 docker-compose up -d
 ```
+
+Services sẽ được khởi động:
+- **Qdrant**: http://localhost:6333 (Vector Database)
+- **PostgreSQL**: localhost:5432 (Relational Database)
+- **pgAdmin**: http://localhost:5050 (Database Management UI)
 
 ### Bước 3: Cấu hình environment
 
@@ -77,24 +81,22 @@ Tạo file `.env` trong thư mục gốc:
 # OpenRouter API
 OPENROUTER_API_KEY=your_openrouter_api_key
 
-# MySQL
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DATABASE=rag_chatbot
-MYSQL_USER=root
-MYSQL_PASSWORD=your_mysql_password
+# Qdrant Vector Database
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION_NAME=abc_corp_docs
+
+# PostgreSQL
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DATABASE=rag_chatbot
+POSTGRES_USER=rag_user
+POSTGRES_PASSWORD=your_postgres_password
 
 # JWT Secret (thay doi trong production)
 JWT_SECRET_KEY=your_super_secret_key_here
 ```
 
-### Bước 4: Tạo database MySQL
-
-```sql
-CREATE DATABASE rag_chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-### Bước 5: Nạp dữ liệu vào Vector DB
+### Bước 4: Nạp dữ liệu vào Vector DB
 
 ```bash
 python run.py --mode ingest
@@ -139,7 +141,7 @@ RAG-ChatBot/
 │   ├── api.py           # FastAPI endpoints
 │   ├── auth.py          # Authentication logic
 │   ├── config.py        # Configuration management
-│   ├── database.py      # MySQL repositories
+│   ├── database.py      # PostgreSQL repositories
 │   ├── ingest.py        # Document ingestion
 │   ├── llm.py           # LLM interaction
 │   ├── memory.py        # Conversation memory
@@ -148,11 +150,24 @@ RAG-ChatBot/
 │   └── streamlit_app.py # Streamlit UI
 ├── data/
 │   └── legal_kb/        # PDF documents (demo data)
-├── scripts/
-│   └── update_index.py  # Index management
-├── docker-compose.yml   # Qdrant container
+├── eval/
+│   ├── evaluate.py      # Evaluation script
+│   └── golden_set.json  # Test cases
+├── docker-compose.yml   # Qdrant, PostgreSQL, pgAdmin
 ├── requirements.txt
 ├── run.py               # Entry point
 └── .env                 # Environment variables (not in git)
 ```
+
+## Evaluation
+
+Dự án có sẵn script đánh giá chất lượng RAG:
+
+python eval/evaluate.py              # Đánh giá tất cả test cases
+
+Metrics đánh giá:
+- **Keyword Score**: Câu trả lời có chứa keywords mong đợi
+- **Source Accuracy**: Trích dẫn đúng nguồn tài liệu
+- **Grounding Rate**: Tỷ lệ câu trả lời có nguồn hỗ trợ
+- **Latency**: Thời gian xử lý
 

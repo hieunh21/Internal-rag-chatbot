@@ -260,17 +260,9 @@ async def chat(
         return response
         
     except Exception as e:
-        # Log error - đã tắt
+        # Log error to console
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
-        # log_chat(
-        #     session_id=session_id,
-        #     question=request.question,
-        #     answer="",
-        #     sources=[],
-        #     latency_ms=0,
-        #     is_grounded=False,
-        #     error=error_msg
-        # )
+        print(f"\n❌ CHAT ERROR:\n{error_msg}")
         
         raise HTTPException(
             status_code=500,
@@ -448,6 +440,163 @@ async def reload_index(current_user: UserResponse = Depends(get_current_active_a
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ================================================================
+# ADMIN - DOCUMENT MANAGEMENT
+# ================================================================
+
+from fastapi import UploadFile, File
+import shutil
+
+@app.get("/admin/documents", tags=["Admin"])
+async def list_documents(current_user: UserResponse = Depends(get_current_active_admin)):
+    """
+    Liệt kê tất cả documents trong thư mục data - Chỉ Admin
+    
+    **Yêu cầu:** Bearer token với role=admin
+    """
+    try:
+        data_dir = settings.DATA_DIR
+        
+        if not os.path.exists(data_dir):
+            return {"documents": [], "total": 0, "data_dir": data_dir}
+        
+        documents = []
+        for filename in sorted(os.listdir(data_dir)):
+            filepath = os.path.join(data_dir, filename)
+            
+            # Bỏ qua thư mục
+            if os.path.isdir(filepath):
+                continue
+            
+            # Chỉ lấy file hỗ trợ
+            if filename.endswith(('.pdf', '.md', '.txt')):
+                stat = os.stat(filepath)
+                documents.append({
+                    "filename": filename,
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "file_type": filename.split('.')[-1].upper()
+                })
+        
+        return {
+            "documents": documents,
+            "total": len(documents),
+            "data_dir": data_dir
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/upload-document", tags=["Admin"])
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(get_current_active_admin)
+):
+    """
+    Upload document mới vào thư mục data - Chỉ Admin
+    
+    Hỗ trợ: PDF, Markdown (.md), Text (.txt)
+    
+    **Yêu cầu:** Bearer token với role=admin
+    
+    **Lưu ý:** Sau khi upload, cần gọi /admin/rebuild-index để cập nhật vector database
+    """
+    # Kiểm tra file type
+    allowed_extensions = ['.pdf', '.md', '.txt']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type không hỗ trợ. Chỉ chấp nhận: {', '.join(allowed_extensions)}"
+        )
+    
+    # Tạo thư mục nếu chưa có
+    os.makedirs(settings.DATA_DIR, exist_ok=True)
+    
+    # Lưu file
+    file_path = os.path.join(settings.DATA_DIR, file.filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        file_size = os.path.getsize(file_path)
+        
+        return {
+            "message": "Upload thành công",
+            "filename": file.filename,
+            "size_kb": round(file_size / 1024, 2),
+            "path": file_path,
+            "uploaded_by": current_user.email,
+            "timestamp": datetime.now().isoformat(),
+            "note": "Gọi /admin/rebuild-index để cập nhật vector database"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
+
+
+@app.delete("/admin/document/{filename}", tags=["Admin"])
+async def delete_document(
+    filename: str,
+    current_user: UserResponse = Depends(get_current_active_admin)
+):
+    """
+    Xóa document khỏi thư mục data - Chỉ Admin
+    
+    **Yêu cầu:** Bearer token với role=admin
+    
+    **Lưu ý:** Sau khi xóa, cần gọi /admin/rebuild-index để cập nhật vector database
+    """
+    file_path = os.path.join(settings.DATA_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File không tồn tại")
+    
+    try:
+        os.remove(file_path)
+        return {
+            "message": "Xóa thành công",
+            "filename": filename,
+            "deleted_by": current_user.email,
+            "timestamp": datetime.now().isoformat(),
+            "note": "Gọi /admin/rebuild-index để cập nhật vector database"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi xóa file: {str(e)}")
+
+
+@app.post("/admin/rebuild-index", tags=["Admin"])
+async def rebuild_index(current_user: UserResponse = Depends(get_current_active_admin)):
+    """
+    Rebuild toàn bộ Qdrant index từ documents - Chỉ Admin
+    
+    **Yêu cầu:** Bearer token với role=admin
+    
+    **Cảnh báo:** Quá trình này có thể mất vài phút tùy số lượng documents
+    """
+    try:
+        from app.ingest import build_index
+        
+        # Rebuild index
+        build_index()
+        
+        # Reload RAG engine
+        rag_engine.reload_db()
+        
+        # Lấy thông tin mới
+        health = rag_engine.health_check()
+        
+        return {
+            "message": "Rebuild index thành công",
+            "vectors_count": health.get("vectors_count", 0),
+            "rebuilt_by": current_user.email,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi rebuild: {str(e)}")
 
 
 # ================================================================

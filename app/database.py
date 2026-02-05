@@ -1,10 +1,10 @@
 """
-MySQL Database Module
-Quản lý kết nối và operations với MySQL
+PostgreSQL Database Module
+Quản lý kết nối và operations với PostgreSQL
 """
 
-import pymysql
-from pymysql.cursors import DictCursor
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 import json
@@ -12,12 +12,13 @@ from datetime import datetime
 
 from app.config import settings
 
+
 class Database:
     """
-    MySQL Database Manager
+    PostgreSQL Database Manager
     
     Features:
-        - Connection pooling (đơn giản)
+        - Connection management
         - Auto-reconnect
         - Context manager for transactions
     """
@@ -27,48 +28,24 @@ class Database:
         self._connection = None
         self._connect()
         self._create_tables()
-        print(" MySQL Database initialized")
+        print(" PostgreSQL Database initialized")
     
     def _connect(self) -> None:
-        """Tạo kết nối đến MySQL"""
+        """Tạo kết nối đến PostgreSQL"""
         try:
-            self._connection = pymysql.connect(
-                host=settings.MYSQL_HOST,
-                port=settings.MYSQL_PORT,
-                user=settings.MYSQL_USER,
-                password=settings.MYSQL_PASSWORD or "",
-                database=settings.MYSQL_DATABASE,
-                charset='utf8mb4',
-                cursorclass=DictCursor,
-                autocommit=True
+            self._connection = psycopg2.connect(
+                host=settings.POSTGRES_HOST,
+                port=settings.POSTGRES_PORT,
+                user=settings.POSTGRES_USER,
+                password=settings.POSTGRES_PASSWORD or "",
+                dbname=settings.POSTGRES_DATABASE,
+                cursor_factory=RealDictCursor
             )
-            print(f"  ✓ Connected to MySQL at {settings.MYSQL_HOST}:{settings.MYSQL_PORT}")
-        except pymysql.err.OperationalError as e:
-            # Database không tồn tại, tạo mới
-            if e.args[0] == 1049:
-                self._create_database()
-                self._connect()
-            else:
-                raise e
-    
-    def _create_database(self) -> None:
-        """Tạo database nếu chưa tồn tại"""
-        conn = pymysql.connect(
-            host=settings.MYSQL_HOST,
-            port=settings.MYSQL_PORT,
-            user=settings.MYSQL_USER,
-            password=settings.MYSQL_PASSWORD or "",
-            charset='utf8mb4'
-        )
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    f"CREATE DATABASE IF NOT EXISTS {settings.MYSQL_DATABASE} "
-                    "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-                )
-            print(f"  ✓ Created database: {settings.MYSQL_DATABASE}")
-        finally:
-            conn.close()
+            self._connection.autocommit = True
+            print(f"  ✓ Connected to PostgreSQL at {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}")
+        except psycopg2.OperationalError as e:
+            print(f"  ✗ PostgreSQL connection failed: {e}")
+            raise e
     
     def _create_tables(self) -> None:
         """Tạo các bảng cần thiết"""
@@ -76,35 +53,82 @@ class Database:
         # Bảng sessions
         create_sessions = """
         CREATE TABLE IF NOT EXISTS sessions (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             session_id VARCHAR(100) UNIQUE NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_session_id (session_id),
-            INDEX idx_updated_at (updated_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_id ON sessions(session_id);
+        CREATE INDEX IF NOT EXISTS idx_updated_at ON sessions(updated_at);
         """
         
         # Bảng messages
         create_messages = """
         CREATE TABLE IF NOT EXISTS messages (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             session_id VARCHAR(100) NOT NULL,
-            role ENUM('user', 'assistant') NOT NULL,
+            role VARCHAR(20) NOT NULL,
             content TEXT NOT NULL,
-            sources JSON,
+            sources JSONB,
             latency FLOAT,
             is_grounded BOOLEAN,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_session_id (session_id),
-            INDEX idx_timestamp (timestamp),
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        );
+        CREATE INDEX IF NOT EXISTS idx_msg_session_id ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_msg_timestamp ON messages(timestamp);
+        """
+        
+        # Bảng users
+        create_users = """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            full_name VARCHAR(255),
+            role VARCHAR(20) DEFAULT 'user',
+            is_active BOOLEAN DEFAULT TRUE,
+            last_login_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_email ON users(email);
+        """
+        
+        # Function và Trigger để tự động cập nhật updated_at
+        create_update_trigger = """
+        CREATE OR REPLACE FUNCTION update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = CURRENT_TIMESTAMP;
+            RETURN NEW;
+        END;
+        $$ language 'plpgsql';
+        
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_sessions_updated_at') THEN
+                CREATE TRIGGER update_sessions_updated_at
+                    BEFORE UPDATE ON sessions
+                    FOR EACH ROW
+                    EXECUTE FUNCTION update_updated_at_column();
+            END IF;
+            
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at') THEN
+                CREATE TRIGGER update_users_updated_at
+                    BEFORE UPDATE ON users
+                    FOR EACH ROW
+                    EXECUTE FUNCTION update_updated_at_column();
+            END IF;
+        END;
+        $$;
         """
         
         with self.get_cursor() as cursor:
             cursor.execute(create_sessions)
             cursor.execute(create_messages)
+            cursor.execute(create_users)
+            cursor.execute(create_update_trigger)
         
         print("  ✓ Tables created/verified")
     
@@ -112,9 +136,7 @@ class Database:
     def get_cursor(self):
         """Context manager để lấy cursor an toàn"""
         # Kiểm tra và reconnect nếu cần
-        try:
-            self._connection.ping(reconnect=True)
-        except:
+        if self._connection is None or self._connection.closed:
             self._connect()
         
         cursor = self._connection.cursor()
@@ -134,14 +156,15 @@ class Database:
             self._connection = None
     
     def test_connection(self) -> bool:
-        """Test MySQL connection"""
+        """Test PostgreSQL connection"""
         try:
-            self._connection.ping(reconnect=True)
+            if self._connection is None or self._connection.closed:
+                self._connect()
+            with self.get_cursor() as cursor:
+                cursor.execute("SELECT 1")
             return True
         except:
             return False
-        
-
 
 
 # ================================================================
@@ -159,11 +182,11 @@ class SessionRepository:
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO sessions (session_id) VALUES (%s)",
+                    "INSERT INTO sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING",
                     (session_id,)
                 )
             return True
-        except pymysql.err.IntegrityError:
+        except psycopg2.IntegrityError:
             # Session đã tồn tại
             return False
     
@@ -180,7 +203,7 @@ class SessionRepository:
         """Cập nhật timestamp của session"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
-                "UPDATE sessions SET updated_at = NOW() WHERE session_id = %s",
+                "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
                 (session_id,)
             )
     
@@ -207,7 +230,7 @@ class SessionRepository:
                      ORDER BY timestamp LIMIT 1) as first_question
                 FROM sessions s
                 LEFT JOIN messages m ON s.session_id = m.session_id
-                GROUP BY s.session_id
+                GROUP BY s.session_id, s.created_at, s.updated_at
                 ORDER BY s.updated_at DESC
                 LIMIT %s
             """, (limit,))
@@ -229,9 +252,9 @@ class MessageRepository:
                    is_grounded: bool = None) -> int:
         """Thêm message mới"""
         with self.db.get_cursor() as cursor:
-            # Đảm bảo session tồn tại
+            # Đảm bảo session tồn tại (INSERT ... ON CONFLICT DO NOTHING)
             cursor.execute(
-                "INSERT IGNORE INTO sessions (session_id) VALUES (%s)",
+                "INSERT INTO sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING",
                 (session_id,)
             )
             
@@ -240,6 +263,7 @@ class MessageRepository:
                 INSERT INTO messages 
                 (session_id, role, content, sources, latency, is_grounded)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 session_id,
                 role,
@@ -249,13 +273,16 @@ class MessageRepository:
                 is_grounded
             ))
             
+            result = cursor.fetchone()
+            message_id = result['id'] if result else 0
+            
             # Cập nhật session timestamp
             cursor.execute(
-                "UPDATE sessions SET updated_at = NOW() WHERE session_id = %s",
+                "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
                 (session_id,)
             )
             
-            return cursor.lastrowid
+            return message_id
     
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Lấy messages của session"""
@@ -269,9 +296,9 @@ class MessageRepository:
             
             messages = cursor.fetchall()
             
-            # Parse JSON sources
+            # Parse JSON sources (psycopg2 tự động parse JSONB)
             for msg in messages:
-                if msg['sources']:
+                if msg['sources'] and isinstance(msg['sources'], str):
                     msg['sources'] = json.loads(msg['sources'])
             
             return messages
@@ -334,9 +361,11 @@ class UserRepository:
                 cursor.execute("""
                     INSERT INTO users (email, password_hash, full_name, role)
                     VALUES (%s, %s, %s, %s)
+                    RETURNING id
                 """, (email, password_hash, full_name, role))
-                return cursor.lastrowid
-        except pymysql.err.IntegrityError:
+                result = cursor.fetchone()
+                return result['id'] if result else None
+        except psycopg2.IntegrityError:
             # Email đã tồn tại
             return None
     
@@ -386,19 +415,16 @@ class UserRepository:
             return cursor.rowcount > 0
     
     def update_last_login(self, user_id: int) -> None:
-        """Cập nhật thời gian đăng nhập cuối (safe - bỏ qua nếu cột không tồn tại)"""
+        """Cập nhật thời gian đăng nhập cuối"""
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute(
-                    "UPDATE users SET last_login_at = NOW() WHERE id = %s",
+                    "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = %s",
                     (user_id,)
                 )
-        except pymysql.err.OperationalError as e:
-            # Bỏ qua nếu cột last_login_at chưa tồn tại
-            if "Unknown column" in str(e):
-                pass
-            else:
-                raise
+        except Exception as e:
+            # Bỏ qua nếu có lỗi
+            pass
     
     def delete_user(self, user_id: int) -> bool:
         """Xóa user (soft delete - set is_active = FALSE)"""
@@ -412,17 +438,16 @@ class UserRepository:
     def list_users(self, limit: int = 50, include_inactive: bool = False) -> List[Dict]:
         """Lấy danh sách users"""
         with self.db.get_cursor() as cursor:
-            # Query không dùng last_login_at để tránh lỗi nếu cột chưa tồn tại
             if include_inactive:
                 cursor.execute("""
                     SELECT id, email, full_name, role, is_active, 
-                           created_at, updated_at
+                           last_login_at, created_at, updated_at
                     FROM users ORDER BY created_at DESC LIMIT %s
                 """, (limit,))
             else:
                 cursor.execute("""
                     SELECT id, email, full_name, role, is_active,
-                           created_at, updated_at
+                           last_login_at, created_at, updated_at
                     FROM users WHERE is_active = TRUE
                     ORDER BY created_at DESC LIMIT %s
                 """, (limit,))
@@ -447,4 +472,3 @@ db = Database()
 session_repo = SessionRepository(db)
 message_repo = MessageRepository(db)
 user_repo = UserRepository(db)
-

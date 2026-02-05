@@ -147,6 +147,19 @@ class ConversationMemory:
             "updated_at": session['updated_at'].isoformat() if session['updated_at'] else None
         }
     
+    def get_active_sessions(self) -> int:
+        """
+        Đếm số lượng sessions đang active
+        
+        Returns:
+            Số lượng sessions trong database
+        """
+        try:
+            sessions = self._session_repo.list_sessions(limit=1000)
+            return len(sessions)
+        except Exception:
+            return 0
+    
     # ================================================================
     # FOR STREAMLIT SIDEBAR
     # ================================================================
