@@ -12,7 +12,7 @@ Dự án xây dựng một chatbot có khả năng:
 
 ## Demo
 
-(screenshots/demo.jpg)
+![Giao diện demo Chatbot](screenshots/demo.jpg)
 
 
 ## Lưu ý về dữ liệu
