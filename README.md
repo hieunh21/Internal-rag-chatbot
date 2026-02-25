@@ -10,6 +10,11 @@ Dự án xây dựng một chatbot có khả năng:
 - Lưu trữ lịch sử hội thoại theo từng người dùng
 - Xác thực người dùng qua JWT
 
+## Demo
+
+(screenshots/demo.jpg)
+
+
 ## Lưu ý về dữ liệu
 
 Dữ liệu trong thư mục `data/` chỉ là **dữ liệu giả lập** phục vụ mục đích demo và phát triển. Các tài liệu PDF mô phỏng quy trình, chính sách của một công ty giả định (ABC Corp) và không phản ánh bất kỳ tổ chức thực tế nào.
@@ -170,4 +175,5 @@ Metrics đánh giá:
 - **Source Accuracy**: Trích dẫn đúng nguồn tài liệu
 - **Grounding Rate**: Tỷ lệ câu trả lời có nguồn hỗ trợ
 - **Latency**: Thời gian xử lý
+
 
