@@ -1,21 +1,10 @@
-"""
-RAG Engine - Core của hệ thống Retrieval-Augmented Generation
-Using Qdrant Vector Database
-
-Features:
-    - Retrieve documents với similarity scores
-    - Threshold filtering (lọc kết quả không liên quan)
-    - Citation formatting (trích dẫn nguồn)
-    - Integration với Conversation Memory
-    - Fallback handling (khi không tìm thấy nguồn)
-"""
-
 import os
 import time
 from typing import List, Tuple, Optional
 
 from qdrant_client import QdrantClient
 from langchain.schema import Document
+from sentence_transformers import CrossEncoder
 
 from app.ingest import LocalEmbedding
 from app.models import Source
@@ -24,19 +13,7 @@ from app.llm import call_llm
 
 
 class RAGEngine:
-    """
-    RAG Engine với Qdrant và citations
-    
-    Workflow:
-        1. Retrieve: Tìm documents liên quan từ Qdrant
-        2. Filter: Lọc theo ngưỡng similarity
-        3. Build Context: Ghép documents thành context
-        4. Generate: Gọi LLM với context + history
-        5. Format: Trả về answer + sources
-    """
-    
     def __init__(self):
-        """Initialize RAG Engine với Qdrant"""
         print("Initializing RAG Engine...")
         
         # Embedding model (same as ingest)
@@ -47,10 +24,26 @@ class RAGEngine:
         self.collection_name = settings.QDRANT_COLLECTION_NAME
         self._connect_db()
         
+        # Reranker model (optional)
+        self.reranker = None
+        if settings.USE_RERANKER:
+            self._load_reranker()
+        
         print("RAG Engine ready!")
     
+    def _load_reranker(self) -> None:
+        try:
+            print(f"  Loading reranker: {settings.RERANKER_MODEL}...")
+            self.reranker = CrossEncoder(
+                settings.RERANKER_MODEL,
+                max_length=512
+            )
+            print(f"Reranker loaded: {settings.RERANKER_MODEL}")
+        except Exception as e:
+            print(f"Reranker load failed: {e}. Continuing without reranking.")
+            self.reranker = None
+    
     def _connect_db(self) -> None:
-        """Kết nối đến Qdrant server"""
         try:
             self.client = QdrantClient(url=settings.QDRANT_URL)
             
@@ -66,37 +59,50 @@ class RAGEngine:
             )
     
     def reload_db(self) -> None:
-        """Reconnect to Qdrant (sau khi update index)"""
         print("Reconnecting to Qdrant...")
         self._connect_db()
         print("Reconnected!")
     
-    # ================================================================
+
     # RETRIEVAL METHODS
-    # ================================================================
-    
+    def rerank(self, query: str, results: List[Tuple]) -> List[Tuple]:
+        if not self.reranker or not results:
+            return results
+        
+        # Tạo pairs (query, passage) cho CrossEncoder
+        pairs = [(query, doc.page_content) for doc, _ in results]
+        
+        # Predict rerank scores
+        rerank_scores = self.reranker.predict(pairs)
+        
+        # Gắn rerank score vào results
+        reranked = [
+            (doc, float(rerank_score))
+            for (doc, _), rerank_score in zip(results, rerank_scores)
+        ]
+        
+        # Sắp xếp theo rerank score giảm dần
+        reranked.sort(key=lambda x: x[1], reverse=True)
+        
+        # Lấy top K và filter theo POST_RERANK_THRESHOLD
+        top_k = reranked[:settings.RERANKER_TOP_K]
+        filtered = [(doc, score) for doc, score in top_k if score >= settings.POST_RERANK_THRESHOLD]
+        return filtered
+
     def retrieve_with_scores(
         self, 
         query: str, 
         k: int = None
     ) -> List[Tuple]:
-        """
-        Retrieve documents từ Qdrant với similarity scores
-        
-        Args:
-            query: Câu hỏi của user
-            k: Số documents cần retrieve (default: TOP_K từ config)
-            
-        Returns:
-            List[(Document, similarity_score)]
-            Score từ 0-1, càng cao càng giống (COSINE similarity)
-        """
-        k = k or settings.TOP_K
+        if self.reranker:
+            k = k or settings.RERANKER_CANDIDATES
+        else:
+            k = k or settings.TOP_K
         
         # Embed query
         query_vector = self.embeddings.embed_query(query)
         
-        # Search in Qdrant (query_points for newer versions)
+        # Search in Qdrant
         from qdrant_client.models import NamedVector
         
         results = self.client.query_points(
@@ -125,34 +131,17 @@ class RAGEngine:
         
         return results_with_similarity
     
-    def filter_by_threshold(self, results: List[Tuple]) -> List[Tuple]:
-        """
-        Lọc kết quả theo ngưỡng similarity
-        
-        Args:
-            results: List[(Document, score)]
-            
-        Returns:
-            List[(Document, score)] đã lọc
-        """
-        threshold = settings.SIMILARITY_THRESHOLD
+    def filter_by_threshold(self, results: List[Tuple], pre_rerank: bool = False) -> List[Tuple]:
+        if pre_rerank:
+            # Trước rerank: chỉ loại rác rõ ràng, ngưỡng thấp
+            threshold = settings.PRE_RERANK_THRESHOLD
+        else:
+            # Không có reranker: dùng threshold chuẩn
+            threshold = settings.SIMILARITY_THRESHOLD
         filtered = [(doc, score) for doc, score in results if score >= threshold]
         return filtered
-    
-    # ================================================================
     # CITATION FORMATTING
-    # ================================================================
-    
     def format_sources(self, results: List[Tuple]) -> List[Source]:
-        """
-        Chuyển results thành Source objects (citations)
-        
-        Args:
-            results: List[(Document, score)]
-            
-        Returns:
-            List[Source] với đầy đủ thông tin trích dẫn
-        """
         sources = []
         
         for idx, (doc, score) in enumerate(results):
@@ -187,20 +176,8 @@ class RAGEngine:
         
         return sources
     
-    # ================================================================
     # CONTEXT BUILDING
-    # ================================================================
-    
     def build_context(self, results: List[Tuple]) -> str:
-        """
-        Ghép các documents thành context string cho LLM
-        
-        Args:
-            results: List[(Document, score)]
-            
-        Returns:
-            String chứa context đã format
-        """
         if not results:
             return ""
         
@@ -220,27 +197,14 @@ class RAGEngine:
         
         return "\n---\n".join(context_parts)
     
-    # ================================================================
+
     # PROMPT BUILDING
-    # ================================================================
-    
     def build_prompt(
         self,
         question: str,
         context: str,
         history: str = ""
     ) -> str:
-        """
-        Xây dựng prompt cho LLM
-        
-        Args:
-            question: Câu hỏi của user
-            context: Context từ retrieved documents
-            history: Lịch sử hội thoại (optional)
-            
-        Returns:
-            Prompt string hoàn chỉnh
-        """
         # Base system instruction
         system_instruction = """Bạn là trợ lý AI của Công ty ABC (ABC Corp), chuyên trả lời các câu hỏi về quy định, chính sách công ty.
 
@@ -306,43 +270,33 @@ Hãy trả lời lịch sự, gợi ý người dùng liên hệ bộ phận ph�
 
 Trả lời:"""
     
-    # ================================================================
-    # MAIN ASK METHOD
-    # ================================================================
-    
     def ask(
         self,
         question: str,
         history: str = "",
         use_fallback: bool = True
     ) -> Tuple[str, List[Source], bool, float]:
-        """
-        Main RAG method - xử lý câu hỏi và trả về answer với sources
-        
-        Args:
-            question: Câu hỏi của user
-            history: Lịch sử hội thoại (từ memory)
-            use_fallback: Có dùng fallback khi không tìm thấy nguồn
-            
-        Returns:
-            Tuple gồm:
-            - answer: Câu trả lời từ LLM
-            - sources: List[Source] citations
-            - is_grounded: True nếu có nguồn hỗ trợ
-            - latency_ms: Thời gian xử lý (milliseconds)
-        """
         start_time = time.time()
         
         # ============ STEP 1: RETRIEVE ============
         results = self.retrieve_with_scores(question)
         
-        # ============ STEP 2: FILTER BY THRESHOLD ============
-        filtered_results = self.filter_by_threshold(results)
+        # ============ STEP 2: FILTER ============
+        if self.reranker:
+            # Có reranker: dùng ngưỡng thấp (0.1) để không loại nhầm candidates
+            filtered_results = self.filter_by_threshold(results, pre_rerank=True)
+        else:
+            # Không có reranker: dùng ngưỡng chuẩn (0.25)
+            filtered_results = self.filter_by_threshold(results, pre_rerank=False)
         
-        # ============ STEP 3: CHECK IF GROUNDED ============
+        # ============ STEP 3: RERANK (CrossEncoder scoring + post-rerank filter) ============
+        if self.reranker and filtered_results:
+            filtered_results = self.rerank(question, filtered_results)
+        
+        # ============ STEP 4: CHECK IF GROUNDED ============
         is_grounded = len(filtered_results) > 0
         
-        # ============ STEP 4: GENERATE ANSWER ============
+        # ============ STEP 5: GENERATE ANSWER ============
         if is_grounded:
             # Có nguồn → build context và generate
             context = self.build_context(filtered_results)
@@ -380,25 +334,17 @@ Trả lời:"""
             
             sources = []
         
-        # ============ STEP 5: CALCULATE LATENCY ============
+        # ============ STEP 6: CALCULATE LATENCY ============
         latency_ms = (time.time() - start_time) * 1000
         
         return answer, sources, is_grounded, latency_ms
     
-    # ================================================================
     # UTILITY METHODS
-    # ================================================================
-    
     def get_similar_questions(
         self, 
         question: str, 
         k: int = 3
     ) -> List[str]:
-        """
-        Tìm các đoạn tài liệu tương tự (để suggest)
-        
-        Useful cho "Did you mean...?" feature
-        """
         results = self.retrieve_with_scores(question, k=k)
         
         suggestions = []
@@ -411,7 +357,6 @@ Trả lời:"""
         return suggestions
     
     def health_check(self) -> dict:
-        """Kiểm tra trạng thái của RAG Engine"""
         try:
             collection_info = self.client.get_collection(self.collection_name)
             points_count = collection_info.points_count
@@ -425,14 +370,11 @@ Trả lời:"""
             "vectors_count": points_count,
             "embedding_model": settings.EMBEDDING_MODEL,
             "top_k": settings.TOP_K,
-            "threshold": settings.SIMILARITY_THRESHOLD
+            "threshold": settings.SIMILARITY_THRESHOLD,
+            "reranker": settings.RERANKER_MODEL if settings.USE_RERANKER else None
         }
 
-
-# ================================================================
 # SINGLETON INSTANCE
-# ================================================================
-
 # Tạo instance duy nhất để dùng trong toàn bộ application
 # Lazy loading - chỉ tạo khi import lần đầu
 rag_engine = RAGEngine()

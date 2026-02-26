@@ -1,8 +1,3 @@
-"""
-Document Ingestion - Qdrant Vector Database
-Hỗ trợ PDF (bao gồm bảng), Markdown, Text
-"""
-
 import os
 import uuid
 from pathlib import Path
@@ -17,10 +12,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from app.config import settings
 
-# ================================================================
-# EMBEDDING MODEL (Local - FREE)
-# ================================================================
 
+# EMBEDDING MODEL 
 class LocalEmbedding(Embeddings):
     """
     Local Embedding sử dụng SentenceTransformer
@@ -38,10 +31,7 @@ class LocalEmbedding(Embeddings):
         return self.model.encode(text).tolist()
 
 
-# ================================================================
 # PDF EXTRACTION WITH TABLE SUPPORT
-# ================================================================
-
 def format_table(table: list, table_num: int) -> str:
     """
     Format bảng thành text có cấu trúc dễ đọc cho LLM
@@ -114,10 +104,7 @@ def extract_pdf_with_tables(pdf_path: str) -> list:
     return docs
 
 
-# ================================================================
 # DOCUMENT LOADING
-# ================================================================
-
 def load_documents(data_dir: str):
     """
     Load tất cả documents: .pdf, .md, .txt
@@ -162,9 +149,7 @@ def load_documents(data_dir: str):
     return docs
 
 
-# ================================================================
 # QDRANT INDEX BUILDING
-# ================================================================
 def build_index():
     # 1.Load data
     docs = load_documents(settings.DATA_DIR)
@@ -244,112 +229,6 @@ def build_index():
     print(f" Qdrant URL: {settings.QDRANT_URL}")
     print(f" Dashboard: http://localhost:6333/dashboard")
     print("=" * 60)
-
-
-
-# def build_index():
-#     """
-#     Build Qdrant index từ tất cả documents
-#     """
-#     print("=" * 60)
-#     print("   DOCUMENT INGESTION PIPELINE")
-#     print("   Using: Qdrant Vector Database (Docker)")
-#     print("   PDF table extraction enabled (pdfplumber)")
-#     print("=" * 60)
-    
-#     # 1. Load documents
-#     print("\n Loading documents...")
-#     docs = load_documents(settings.DATA_DIR)
-    
-#     if not docs:
-#         print("\n No documents found!")
-#         return
-    
-#     print(f"\n Total loaded: {len(docs)} documents")
-    
-#     # 2. Chunking
-#     print("\n Chunking...")
-#     splitter = RecursiveCharacterTextSplitter(
-#         chunk_size=settings.CHUNK_SIZE,
-#         chunk_overlap=settings.CHUNK_OVERLAP,
-#         separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
-#     )
-#     chunks = splitter.split_documents(docs)
-    
-#     # Thêm chunk_id vào metadata
-#     for i, chunk in enumerate(chunks):
-#         chunk.metadata["chunk_id"] = i
-    
-#     print(f"  → {len(chunks)} chunks created")
-    
-#     # 3. Create embeddings
-#     print("\n Creating embeddings...")
-#     embeddings = LocalEmbedding()
-#     texts = [chunk.page_content for chunk in chunks]
-#     vectors = embeddings.embed_documents(texts)
-    
-#     # 4. Connect to Qdrant
-#     print(f"\n🔌 Connecting to Qdrant at {settings.QDRANT_URL}...")
-#     client = QdrantClient(url=settings.QDRANT_URL)
-    
-#     # 5. Recreate collection (xóa cũ nếu có)
-#     collection_name = settings.QDRANT_COLLECTION_NAME
-    
-#     # Xóa collection cũ nếu tồn tại
-#     try:
-#         client.delete_collection(collection_name)
-#         print(f"  Deleted existing collection: {collection_name}")
-#     except:
-#         pass
-    
-#     # Tạo collection mới
-#     client.create_collection(
-#         collection_name=collection_name,
-#         vectors_config=VectorParams(
-#             size=embeddings.dimension,  # 384 for all-MiniLM-L6-v2
-#             distance=Distance.COSINE
-#         )
-#     )
-#     print(f"   Created collection: {collection_name}")
-    
-#     # 6. Upload vectors
-#     print("\n Uploading to Qdrant...")
-    
-#     points = []
-#     for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
-#         point = PointStruct(
-#             id=str(uuid.uuid4()),  # UUID cho mỗi point
-#             vector=vector,
-#             payload={
-#                 "content": chunk.page_content,
-#                 "source": chunk.metadata.get("source", "unknown"),
-#                 "file_type": chunk.metadata.get("file_type", "unknown"),
-#                 "page": chunk.metadata.get("page", 0),
-#                 "chunk_id": chunk.metadata.get("chunk_id", i)
-#             }
-#         )
-#         points.append(point)
-    
-#     # Upload theo batch (tối ưu performance)
-#     batch_size = 100
-#     for i in range(0, len(points), batch_size):
-#         batch = points[i:i + batch_size]
-#         client.upsert(
-#             collection_name=collection_name,
-#             points=batch
-#         )
-#         print(f"  → Uploaded {min(i + batch_size, len(points))}/{len(points)} points")
-    
-#     # 7. Verify
-#     collection_info = client.get_collection(collection_name)
-    
-#     print("\n" + "=" * 60)
-#     print(" QDRANT INDEX BUILT SUCCESSFULLY!")
-#     print(f" Collection: {collection_name}")
-#     print(f" Total vectors: {collection_info.points_count}")
-#     print(f" Qdrant URL: {settings.QDRANT_URL}")
-#     print(f" Dashboard: http://localhost:6333/dashboard")
-#     print("=" * 60)
 
 
 if __name__ == "__main__":

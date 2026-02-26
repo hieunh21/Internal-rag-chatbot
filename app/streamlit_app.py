@@ -1,15 +1,3 @@
-"""
-RAG ChatBot - Streamlit Interface
-
-Giao diện web đẹp cho RAG ChatBot sử dụng Streamlit.
-Tích hợp Authentication (Login/Register).
-
-Usage:
-    streamlit run app/streamlit_app.py
-    hoặc
-    python run.py --mode streamlit
-"""
-
 import os
 import sys
 import time
@@ -29,10 +17,7 @@ from app.config import settings
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
-# ================================================================
 # PAGE CONFIG
-# ================================================================
-
 st.set_page_config(
     page_title="RAG ChatBot - ABC Corp",
     page_icon="🤖",
@@ -40,9 +25,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ================================================================
 # CUSTOM CSS
-# ================================================================
 
 st.markdown("""
 <style>
@@ -126,12 +109,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ================================================================
 # SESSION STATE INITIALIZATION
-# ================================================================
+
 
 def init_session_state():
-    """Initialize session state variables"""
     # Auth state
     if "access_token" not in st.session_state:
         st.session_state.access_token = None
@@ -160,13 +141,10 @@ def init_session_state():
 
 init_session_state()
 
-
-# ================================================================
 # AUTH HELPER FUNCTIONS
-# ================================================================
+
 
 def get_auth_headers() -> Dict[str, str]:
-    """Get authorization headers với JWT token"""
     if st.session_state.access_token:
         return {"Authorization": f"Bearer {st.session_state.access_token}"}
     return {}
@@ -174,11 +152,6 @@ def get_auth_headers() -> Dict[str, str]:
 
 def api_request(method: str, endpoint: str, json_data: dict = None, 
                 require_auth: bool = True, timeout: int = 30) -> Optional[Dict[str, Any]]:
-    """
-    Helper function để gọi API với authentication.
-    
-    Returns: Response JSON hoặc None nếu lỗi
-    """
     url = f"{API_URL}{endpoint}"
     headers = get_auth_headers() if require_auth else {}
     
@@ -222,7 +195,6 @@ def api_request(method: str, endpoint: str, json_data: dict = None,
 
 
 def login(email: str, password: str) -> bool:
-    """Đăng nhập user"""
     try:
         response = requests.post(
             f"{API_URL}/auth/login",
@@ -252,7 +224,6 @@ def login(email: str, password: str) -> bool:
 
 
 def register(email: str, password: str, full_name: str) -> bool:
-    """Đăng ký user mới"""
     try:
         response = requests.post(
             f"{API_URL}/auth/register",
@@ -287,7 +258,6 @@ def register(email: str, password: str, full_name: str) -> bool:
 
 
 def logout():
-    """Đăng xuất"""
     st.session_state.access_token = None
     st.session_state.current_user = None
     st.session_state.session_id = None
@@ -298,23 +268,18 @@ def logout():
 
 
 def is_authenticated() -> bool:
-    """Kiểm tra user đã đăng nhập chưa"""
     return st.session_state.access_token is not None and st.session_state.current_user is not None
 
 
 def is_admin() -> bool:
-    """Kiểm tra user có phải admin không"""
     if not is_authenticated():
         return False
     return st.session_state.current_user.get("role") == "admin"
 
 
-# ================================================================
 # AUTH UI
-# ================================================================
-
 def render_login_page():
-    """Render trang đăng nhập"""
+    
     st.markdown("""
     <div style="text-align: center; padding: 2rem 0;">
         <h1>ABC Corp RAG ChatBot</h1>
@@ -349,7 +314,6 @@ def render_login_page():
 
 
 def render_register_page():
-    """Render trang đăng ký"""
     st.markdown("""
     <div style="text-align: center; padding: 2rem 0;">
         <h1>ABC Corp RAG ChatBot</h1>
@@ -387,13 +351,8 @@ def render_register_page():
                     time.sleep(0.5)
                     st.rerun()
 
-
-# ================================================================
 # SIDEBAR
-# ================================================================
-
 def render_sidebar():
-    """Render sidebar với settings và stats"""
     with st.sidebar:
         st.image("https://via.placeholder.com/200x60?text=ABC+Corp", width=200)
         st.title("RAG ChatBot")
@@ -659,11 +618,7 @@ def render_sidebar():
         
         return show_sources, show_scores, show_latency
 
-
-# ================================================================
 # CHAT INTERFACE
-# ================================================================
-
 def render_message(role: str, content: str, sources: list = None, 
                    latency: float = None, is_grounded: bool = True,
                    show_sources: bool = True, show_scores: bool = True,
@@ -687,7 +642,7 @@ def render_message(role: str, content: str, sources: list = None,
         
         # Show sources OUTSIDE chat_message to allow expanders
         if show_sources and sources:
-            with st.expander(f"📚 Nguồn tham khảo ({len(sources)})", expanded=False):
+            with st.expander(f"Nguồn tham khảo ({len(sources)})", expanded=False):
                 for i, src in enumerate(sources):
                     # Lấy thông tin
                     source_name = src.get('source', 'Unknown')
@@ -797,11 +752,7 @@ def process_query(question: str):
         st.error(f"Lỗi: {str(e)}")
         return f"Có lỗi xảy ra: {str(e)}", [], False, 0
 
-
-# ================================================================
 # MAIN APP
-# ================================================================
-
 def main():
     """Main application"""
     
@@ -933,12 +884,7 @@ def about_page():
     Hệ thống chatbot thông minh sử dụng **Retrieval-Augmented Generation (RAG)** 
     để trả lời câu hỏi về chính sách nhân sự, quy trình nghiệp vụ, IT & bảo mật.
     """)
-
-
-# ================================================================
 # RUN APP
-# ================================================================
-
 if __name__ == "__main__":
     # Simple navigation using query params
     page = st.query_params.get("page", "chat")

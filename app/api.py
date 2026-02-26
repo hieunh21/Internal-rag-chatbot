@@ -1,21 +1,3 @@
-"""
-FastAPI Application - API Layer cho RAG ChatBot
-
-Endpoints:
-    - GET  /health     : Health check
-    - POST /chat       : Main chat endpoint
-    - GET  /stats      : Thống kê hệ thống
-    - DELETE /session/{session_id} : Xóa session
-    - GET  /sessions   : Liệt kê sessions
-    
-Auth Endpoints:
-    - POST /auth/register : Đăng ký tài khoản
-    - POST /auth/login    : Đăng nhập
-    - GET  /auth/me       : Lấy thông tin user
-    - PUT  /auth/me       : Cập nhật profile
-    - POST /auth/change-password : Đổi mật khẩu
-"""
-
 import os
 import json
 import traceback
@@ -56,10 +38,7 @@ from app.auth import (
     get_current_active_admin
 )
 
-
-# ================================================================
 # INITIALIZE APP
-# ================================================================
 
 app = FastAPI(
     title="RAG ChatBot API",
@@ -71,22 +50,16 @@ app = FastAPI(
     redoc_url="/redoc",    # ReDoc
 )
 
-# ================================================================
 # MIDDLEWARE
-# ================================================================
-
-# CORS - cho phép frontend gọi API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # ["*"] trong development
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ================================================================
 # STARTUP EVENT
-# ================================================================
 
 @app.on_event("startup")
 async def startup_event():
@@ -94,11 +67,8 @@ async def startup_event():
     print("=" * 60)
     print("Starting RAG ChatBot API...")
     print("=" * 60)
-    
-    # Tạo thư mục cần thiết
     ensure_directories()
     
-    # Verify RAG engine đã sẵn sàng
     health = rag_engine.health_check()
     print(f"  ✓ RAG Engine: {'Ready' if health.get('db_connected', False) else 'Not Ready'}")
     print(f"  ✓ Qdrant: {health.get('vectors_count', 0)} vectors")
@@ -106,9 +76,8 @@ async def startup_event():
     print(f"  ✓ Docs: http://{settings.API_HOST}:{settings.API_PORT}/docs")
     print("=" * 60)
 
-# ================================================================
+
 # LOGGING HELPER
-# ================================================================
 
 def log_chat(
     session_id: str,
@@ -132,7 +101,6 @@ def log_chat(
             error=error
         )
         
-        # Đảm bảo thư mục logs tồn tại
         log_dir = os.path.dirname(settings.LOG_FILE)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
@@ -144,9 +112,7 @@ def log_chat(
     except Exception as e:
         print(f"Failed to write log: {e}")
 
-# ================================================================
 # ENDPOINTS
-# ================================================================
 
 @app.get("/", tags=["Root"])
 async def root():
@@ -162,20 +128,12 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """
-    Health check endpoint
-    
-    Kiểm tra trạng thái của:
-    - Vector Database
-    - Memory system
-    - Overall status
-    """
     rag_health = rag_engine.health_check()
     
     return HealthResponse(
         status="healthy" if rag_health.get("db_connected", False) else "unhealthy",
         qdrant_connected=rag_health.get("db_connected", False),
-        db_connected=True,  # MySQL connection (vì đã khởi tạo thành công)
+        db_connected=True,  
         embedding_model=rag_health.get("embedding_model", "unknown"),
         vectors_count=rag_health.get("vectors_count", 0)
     )
@@ -186,26 +144,6 @@ async def chat(
     request: ChatRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """
-    Main chat endpoint (Yêu cầu đăng nhập)
-    
-    Xử lý câu hỏi của user và trả về:
-    - Câu trả lời dựa trên tài liệu
-    - Nguồn trích dẫn (citations)
-    - Metadata (latency, model, etc.)
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    **Parameters:**
-    - `question`: Câu hỏi của user (1-500 ký tự)
-    - `session_id`: ID để tracking conversation (optional)
-    
-    **Response:**
-    - `answer`: Câu trả lời
-    - `sources`: Danh sách nguồn trích dẫn
-    - `meta`: Thông tin xử lý
-    - `is_grounded`: True nếu trả lời dựa trên tài liệu
-    """
     try:
         # Tạo session_id gắn với user nếu không có
         session_id = request.session_id
@@ -247,15 +185,6 @@ async def chat(
             is_grounded=is_grounded
         )
         
-        # 5. Log request - đã tắt (dữ liệu đã lưu trong MySQL)
-        # log_chat(
-        #     session_id=session_id,
-        #     question=request.question,
-        #     answer=answer,
-        #     sources=sources,
-        #     latency_ms=latency_ms,
-        #     is_grounded=is_grounded
-        # )
         
         return response
         
@@ -272,17 +201,6 @@ async def chat(
 
 @app.get("/stats", response_model=StatsResponse, tags=["System"])
 async def get_stats(current_user: UserResponse = Depends(get_current_active_admin)):
-    """
-    Thống kê hệ thống (Chỉ Admin)
-    
-    **Yêu cầu:** Bearer token với role=admin
-    
-    Trả về:
-    - Tổng số queries
-    - Tỷ lệ grounded
-    - Latency trung bình
-    - Số sessions active
-    """
     # Đọc log file
     if not os.path.exists(settings.LOG_FILE):
         return StatsResponse(
@@ -327,14 +245,6 @@ async def clear_session(
     session_id: str,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """
-    Xóa conversation history của một session (Yêu cầu đăng nhập)
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    **Parameters:**
-    - `session_id`: ID của session cần xóa
-    """
     # Kiểm tra session có thuộc về user không (dựa trên prefix user_id)
     if not session_id.startswith(f"user_{current_user.id}_") and current_user.role != "admin":
         raise HTTPException(
@@ -356,13 +266,6 @@ async def clear_session(
 
 @app.get("/sessions", tags=["Session"])
 async def list_sessions(current_user: UserResponse = Depends(get_current_user)):
-    """
-    Liệt kê sessions của user hiện tại (Yêu cầu đăng nhập)
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    Admin có thể xem tất cả sessions.
-    """
     all_sessions = memory.get_session_summaries()
     
     # Filter sessions theo user (dựa trên prefix user_id trong session_id)
@@ -387,11 +290,6 @@ async def get_session_history(
     session_id: str,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """
-    Lấy lịch sử hội thoại của một session (Yêu cầu đăng nhập)
-    
-    **Yêu cầu:** Bearer token trong header
-    """
     # Kiểm tra quyền truy cập
     if not session_id.startswith(f"user_{current_user.id}_") and current_user.role != "admin":
         raise HTTPException(
@@ -451,11 +349,6 @@ import shutil
 
 @app.get("/admin/documents", tags=["Admin"])
 async def list_documents(current_user: UserResponse = Depends(get_current_active_admin)):
-    """
-    Liệt kê tất cả documents trong thư mục data - Chỉ Admin
-    
-    **Yêu cầu:** Bearer token với role=admin
-    """
     try:
         data_dir = settings.DATA_DIR
         
@@ -494,15 +387,6 @@ async def upload_document(
     file: UploadFile = File(...),
     current_user: UserResponse = Depends(get_current_active_admin)
 ):
-    """
-    Upload document mới vào thư mục data - Chỉ Admin
-    
-    Hỗ trợ: PDF, Markdown (.md), Text (.txt)
-    
-    **Yêu cầu:** Bearer token với role=admin
-    
-    **Lưu ý:** Sau khi upload, cần gọi /admin/rebuild-index để cập nhật vector database
-    """
     # Kiểm tra file type
     allowed_extensions = ['.pdf', '.md', '.txt']
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -543,13 +427,6 @@ async def delete_document(
     filename: str,
     current_user: UserResponse = Depends(get_current_active_admin)
 ):
-    """
-    Xóa document khỏi thư mục data - Chỉ Admin
-    
-    **Yêu cầu:** Bearer token với role=admin
-    
-    **Lưu ý:** Sau khi xóa, cần gọi /admin/rebuild-index để cập nhật vector database
-    """
     file_path = os.path.join(settings.DATA_DIR, filename)
     
     if not os.path.exists(file_path):
@@ -570,13 +447,6 @@ async def delete_document(
 
 @app.post("/admin/rebuild-index", tags=["Admin"])
 async def rebuild_index(current_user: UserResponse = Depends(get_current_active_admin)):
-    """
-    Rebuild toàn bộ Qdrant index từ documents - Chỉ Admin
-    
-    **Yêu cầu:** Bearer token với role=admin
-    
-    **Cảnh báo:** Quá trình này có thể mất vài phút tùy số lượng documents
-    """
     try:
         from app.ingest import build_index
         
@@ -605,18 +475,6 @@ async def rebuild_index(current_user: UserResponse = Depends(get_current_active_
 
 @app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
 async def register(user_data: UserCreate):
-    """
-    Đăng ký tài khoản mới
-    
-    **Parameters:**
-    - `email`: Email đăng nhập (unique)
-    - `password`: Mật khẩu (tối thiểu 6 ký tự)
-    - `full_name`: Họ tên đầy đủ
-    
-    **Returns:**
-    - JWT access token
-    - Thông tin user
-    """
     # Kiểm tra email đã tồn tại
     if user_repo.email_exists(user_data.email):
         raise HTTPException(
@@ -669,17 +527,6 @@ async def register(user_data: UserCreate):
 
 @app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
 async def login(credentials: UserLogin):
-    """
-    Đăng nhập và lấy JWT token
-    
-    **Parameters:**
-    - `email`: Email đăng nhập
-    - `password`: Mật khẩu
-    
-    **Returns:**
-    - JWT access token (có hiệu lực 24 giờ)
-    - Thông tin user
-    """
     # Xác thực user
     user = authenticate_user(credentials.email, credentials.password)
     
@@ -716,14 +563,6 @@ async def login(credentials: UserLogin):
 
 @app.get("/auth/me", response_model=UserResponse, tags=["Auth"])
 async def get_me(current_user: UserResponse = Depends(get_current_user)):
-    """
-    Lấy thông tin user hiện tại
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    **Returns:**
-    - Thông tin user đã đăng nhập
-    """
     return current_user
 
 
@@ -732,17 +571,6 @@ async def update_me(
     update_data: UserUpdate,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """
-    Cập nhật thông tin profile
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    **Parameters:**
-    - `full_name`: Họ tên mới (optional)
-    
-    **Returns:**
-    - Thông tin user đã cập nhật
-    """
     # Chuẩn bị dữ liệu cập nhật
     update_fields = {}
     if update_data.full_name is not None:
@@ -782,18 +610,6 @@ async def change_password(
     password_data: PasswordChange,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """
-    Đổi mật khẩu
-    
-    **Yêu cầu:** Bearer token trong header
-    
-    **Parameters:**
-    - `current_password`: Mật khẩu hiện tại
-    - `new_password`: Mật khẩu mới (tối thiểu 6 ký tự)
-    
-    **Returns:**
-    - Thông báo thành công
-    """
     # Lấy user từ database (cần password_hash)
     user = user_repo.get_user_by_id(current_user.id)
     
@@ -828,10 +644,7 @@ async def change_password(
     }
 
 
-# ================================================================
 # ERROR HANDLERS
-# ================================================================
-
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Custom HTTP exception handler"""
@@ -855,10 +668,8 @@ async def general_exception_handler(request, exc):
     )
 
 
-# ================================================================
-# MAIN
-# ================================================================
 
+# MAIN
 if __name__ == "__main__":
     import uvicorn
     
@@ -866,6 +677,6 @@ if __name__ == "__main__":
         "app.api:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=True,  # Auto-reload khi code thay đổi
+        reload=True, 
         log_level="info"
     )

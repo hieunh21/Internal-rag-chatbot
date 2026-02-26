@@ -1,8 +1,3 @@
-"""
-Conversation Memory Management
-Quản lý lịch sử hội thoại theo session_id - MySQL Backend
-"""
-
 from typing import Optional, List
 from datetime import datetime
 
@@ -11,43 +6,18 @@ from app.config import settings
 
 
 class ConversationMemory:
-    """
-    Quản lý memory cho nhiều conversation sessions
-    Backend: MySQL Database
-    
-    Features:
-        - Persistent storage (MySQL)
-        - Session management (create, clear, list)
-        - Export history dạng text cho prompt
-    """
-    
     def __init__(self):
-        """Initialize memory với MySQL backend"""
         # Lazy import để tránh circular dependency
         from app.database import message_repo, session_repo
         self._message_repo = message_repo
         self._session_repo = session_repo
         
         print(" ConversationMemory initialized (MySQL backend)")
-    
-    # ================================================================
+
     # CORE METHODS
-    # ================================================================
-    
     def add_message(self, session_id: str, role: str, content: str,
                     sources: list = None, latency: float = None, 
                     is_grounded: bool = None) -> None:
-        """
-        Thêm message vào session (lưu vào MySQL)
-        
-        Args:
-            session_id: ID của session
-            role: "user" hoặc "assistant"
-            content: Nội dung message
-            sources: Danh sách nguồn trích dẫn (cho assistant)
-            latency: Thời gian xử lý ms (cho assistant)
-            is_grounded: Có nguồn hỗ trợ không (cho assistant)
-        """
         self._message_repo.add_message(
             session_id=session_id,
             role=role,
@@ -58,33 +28,12 @@ class ConversationMemory:
         )
     
     def get_history(self, session_id: str) -> str:
-        """
-        Lấy lịch sử hội thoại dạng text (để ghép vào prompt)
-        
-        Args:
-            session_id: ID của session
-            
-        Returns:
-            String chứa lịch sử hội thoại format:
-            "User: câu hỏi 1
-             Assistant: trả lời 1
-             ..."
-        """
         return self._message_repo.get_history_text(
             session_id=session_id,
             max_turns=settings.MAX_HISTORY_TURNS
         )
     
     def get_messages(self, session_id: str) -> List[Message]:
-        """
-        Lấy danh sách messages của session
-        
-        Args:
-            session_id: ID của session
-            
-        Returns:
-            List[Message] hoặc [] nếu session không tồn tại
-        """
         messages_data = self._message_repo.get_messages(session_id)
         
         # Convert to Message objects
@@ -101,39 +50,19 @@ class ConversationMemory:
         
         return messages
     
-    # ================================================================
-    # SESSION MANAGEMENT
-    # ================================================================
     
+    # SESSION MANAGEMENT
     def clear_session(self, session_id: str) -> bool:
-        """
-        Xóa một session và tất cả messages
-        
-        Args:
-            session_id: ID của session cần xóa
-            
-        Returns:
-            True nếu xóa thành công
-        """
         return self._session_repo.delete_session(session_id)
     
     def session_exists(self, session_id: str) -> bool:
-        """Kiểm tra session có tồn tại không"""
         return self._session_repo.get_session(session_id) is not None
     
     def list_sessions(self) -> List[str]:
-        """Lấy danh sách tất cả session IDs"""
         sessions = self._session_repo.list_sessions()
         return [s['session_id'] for s in sessions]
-    
-    # ================================================================
     # STATISTICS
-    # ================================================================
-    
     def get_session_stats(self, session_id: str) -> Optional[dict]:
-        """
-        Lấy thống kê của một session
-        """
         session = self._session_repo.get_session(session_id)
         if not session:
             return None
@@ -148,29 +77,14 @@ class ConversationMemory:
         }
     
     def get_active_sessions(self) -> int:
-        """
-        Đếm số lượng sessions đang active
-        
-        Returns:
-            Số lượng sessions trong database
-        """
         try:
             sessions = self._session_repo.list_sessions(limit=1000)
             return len(sessions)
         except Exception:
             return 0
-    
-    # ================================================================
+
     # FOR STREAMLIT SIDEBAR
-    # ================================================================
-    
     def get_session_summaries(self) -> List[dict]:
-        """
-        Lấy danh sách tóm tắt các sessions (để hiển thị trong sidebar)
-        
-        Returns:
-            List[{session_id, title, message_count, updated_at}]
-        """
         sessions = self._session_repo.list_sessions(limit=20)
         
         summaries = []
@@ -188,20 +102,11 @@ class ConversationMemory:
         
         return summaries
     
-    # ================================================================
-    # COMPATIBILITY METHODS (for existing code)
-    # ================================================================
+    # COMPATIBILITY METHODS
     
     def save_to_disk(self) -> bool:
-        """
-        Compatibility method - MySQL tự động lưu
-        """
         # MySQL đã tự động persist, không cần làm gì
         return True
 
-
-# ================================================================
 # SINGLETON INSTANCE
-# ================================================================
-
 memory = ConversationMemory()

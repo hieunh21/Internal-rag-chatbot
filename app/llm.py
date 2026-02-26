@@ -1,7 +1,3 @@
-# app/llm.py
-# ingest.py  → xây trí nhớ
-# rag.py     → tìm đoạn liên quan
-# llm.py     → viết câu trả lời
 import httpx
 from openai import OpenAI
 
@@ -19,15 +15,6 @@ client = OpenAI(
 )
 
 def call_llm(prompt: str) -> str:
-    """
-    Gọi LLM với prompt đã được xây dựng sẵn
-    
-    Args:
-        prompt: Prompt đầy đủ (đã bao gồm context, question, instructions)
-        
-    Returns:
-        Câu trả lời từ LLM
-    """
     try:
         response = client.chat.completions.create(
             model=settings.MODEL_NAME,
@@ -47,9 +34,6 @@ def call_llm(prompt: str) -> str:
 
 # Legacy function for backward compatibility with app.py and rag.py
 def call_llm_legacy(context: str, question: str) -> str:
-    """
-    Hàm cũ để tương thích với code cũ (app.py, rag.py)
-    """
     prompt = f"""
 Bạn là chatbot nội bộ doanh nghiệp.
 Chỉ trả lời dựa trên tài liệu sau.

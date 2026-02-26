@@ -1,26 +1,10 @@
-"""
-Pydantic Models cho RAG ChatBot API
-Định nghĩa cấu trúc dữ liệu cho Request, Response, Logging
-"""
-
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 
-
-# ================================================================
 # API REQUEST MODELS
-# ================================================================
-
 class ChatRequest(BaseModel):
-    """
-    Request body cho endpoint /chat
-    
-    Attributes:
-        question: Câu hỏi của user (1-500 ký tự)
-        session_id: ID để tracking conversation (default: "default")
-    """
     question: str = Field(
         ...,  # Required field
         min_length=1,
@@ -43,22 +27,9 @@ class ChatRequest(BaseModel):
         }
 
 
-# ================================================================
-# SOURCE / CITATION MODELS
-# ================================================================
 
+# SOURCE / CITATION MODELS
 class Source(BaseModel):
-    """
-    Một nguồn trích dẫn (citation)
-    
-    Attributes:
-        source: Tên file nguồn
-        chunk_id: ID của chunk trong file
-        score: Điểm similarity (0-1)
-        excerpt: Đoạn trích ngắn (preview)
-        full_content: Nội dung đầy đủ của chunk
-        page: Số trang trong PDF (nếu có)
-    """
     source: str = Field(
         ...,
         description="Tên file tài liệu nguồn"
@@ -112,21 +83,9 @@ class Source(BaseModel):
         }
 
 
-# ================================================================
-# METADATA MODELS
-# ================================================================
 
+# METADATA MODELS
 class Metadata(BaseModel):
-    """
-    Metadata về quá trình xử lý request
-    
-    Attributes:
-        model: Tên model LLM được sử dụng
-        latency_ms: Thời gian xử lý (milliseconds)
-        top_k: Số lượng documents retrieved
-        sources_count: Số nguồn được sử dụng trong câu trả lời
-        timestamp: Thời điểm xử lý
-    """
     model: str = Field(
         ...,
         description="Tên model LLM"
@@ -163,21 +122,9 @@ class Metadata(BaseModel):
         }
 
 
-# ================================================================
-# API RESPONSE MODELS
-# ================================================================
 
+# API RESPONSE MODELS
 class ChatResponse(BaseModel):
-    """
-    Response body cho endpoint /chat
-    
-    Attributes:
-        answer: Câu trả lời từ chatbot
-        sources: Danh sách nguồn trích dẫn
-        meta: Metadata về quá trình xử lý
-        session_id: Session ID của conversation
-        is_grounded: True nếu câu trả lời dựa trên tài liệu
-    """
     answer: str = Field(
         ...,
         description="Câu trả lời từ chatbot"
@@ -224,22 +171,9 @@ class ChatResponse(BaseModel):
         }
 
 
-# ================================================================
-# CONVERSATION MEMORY MODELS
-# ================================================================
 
+# CONVERSATION MEMORY MODELS
 class Message(BaseModel):
-    """
-    Một message trong conversation history
-    
-    Attributes:
-        role: "user" hoặc "assistant"
-        content: Nội dung message
-        timestamp: Thời điểm gửi
-        sources: Danh sách nguồn trích dẫn (cho assistant)
-        latency: Thời gian xử lý (ms)
-        is_grounded: Có nguồn hỗ trợ không
-    """
     role: str = Field(
         ...,
         pattern="^(user|assistant)$",
@@ -270,15 +204,6 @@ class Message(BaseModel):
 
 
 class Conversation(BaseModel):
-    """
-    Một conversation session
-    
-    Attributes:
-        session_id: ID của session
-        messages: Danh sách messages
-        created_at: Thời điểm tạo session
-        updated_at: Thời điểm cập nhật cuối
-    """
     session_id: str = Field(
         ...,
         description="Session ID"
@@ -297,25 +222,9 @@ class Conversation(BaseModel):
     )
 
 
-# ================================================================
-# LOGGING MODELS
-# ================================================================
 
+# LOGGING MODELS
 class ChatLog(BaseModel):
-    """
-    Log entry cho mỗi request
-    Lưu vào file logs/chat_logs.jsonl
-    
-    Attributes:
-        session_id: Session ID
-        question: Câu hỏi của user
-        answer: Câu trả lời
-        sources: Nguồn trích dẫn
-        latency_ms: Thời gian xử lý
-        is_grounded: Có dựa trên tài liệu không
-        timestamp: Thời điểm
-        error: Thông tin lỗi (nếu có)
-    """
     session_id: str
     question: str
     answer: str
@@ -340,12 +249,11 @@ class ChatLog(BaseModel):
         }
 
 
-# ================================================================
+
 # HEALTH CHECK MODELS
-# ================================================================
 
 class HealthResponse(BaseModel):
-    """Response cho endpoint /health"""
+    
     status: str = Field(
         default="healthy",
         description="Trạng thái hệ thống"
@@ -370,7 +278,7 @@ class HealthResponse(BaseModel):
 
 
 class StatsResponse(BaseModel):
-    """Response cho endpoint /stats"""
+
     total_queries: int = Field(
         ...,
         ge=0,
@@ -398,13 +306,8 @@ class StatsResponse(BaseModel):
         description="Số sessions active"
     )
 
-
-# ================================================================
 # ERROR MODELS
-# ================================================================
-
 class ErrorResponse(BaseModel):
-    """Response khi có lỗi"""
     error: str = Field(
         ...,
         description="Mô tả lỗi"
@@ -419,12 +322,9 @@ class ErrorResponse(BaseModel):
     )
 
 
-# ================================================================
-# USER / AUTH MODELS
-# ================================================================
 
+# USER / AUTH MODELS
 class UserCreate(BaseModel):
-    """Request body cho đăng ký user mới"""
     email: EmailStr = Field(
         ...,
         description="Email đăng nhập"
@@ -453,7 +353,6 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    """Request body cho đăng nhập"""
     email: EmailStr = Field(
         ...,
         description="Email đăng nhập"
@@ -473,7 +372,6 @@ class UserLogin(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Response chứa thông tin user (không có password)"""
     id: int = Field(..., description="User ID")
     email: str = Field(..., description="Email")
     full_name: str = Field(..., description="Họ tên")
@@ -497,12 +395,10 @@ class UserResponse(BaseModel):
 
 
 class UserInDB(UserResponse):
-    """User model với password hash (dùng nội bộ)"""
     password_hash: str = Field(..., description="Password đã hash")
 
 
 class TokenResponse(BaseModel):
-    """Response chứa JWT token sau khi login"""
     access_token: str = Field(..., description="JWT access token")
     token_type: str = Field(default="bearer", description="Loại token")
     user: UserResponse = Field(..., description="Thông tin user")
@@ -525,7 +421,6 @@ class TokenResponse(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    """Request body cho đổi mật khẩu"""
     current_password: str = Field(..., description="Mật khẩu hiện tại")
     new_password: str = Field(
         ...,
@@ -544,7 +439,6 @@ class PasswordChange(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """Request body cho cập nhật thông tin user"""
     full_name: Optional[str] = Field(
         default=None,
         min_length=2,

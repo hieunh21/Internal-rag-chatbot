@@ -1,8 +1,3 @@
-"""
-PostgreSQL Database Module
-Quản lý kết nối và operations với PostgreSQL
-"""
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
@@ -14,15 +9,6 @@ from app.config import settings
 
 
 class Database:
-    """
-    PostgreSQL Database Manager
-    
-    Features:
-        - Connection management
-        - Auto-reconnect
-        - Context manager for transactions
-    """
-    
     def __init__(self):
         """Initialize database connection"""
         self._connection = None
@@ -48,7 +34,6 @@ class Database:
             raise e
     
     def _create_tables(self) -> None:
-        """Tạo các bảng cần thiết"""
         
         # Bảng sessions
         create_sessions = """
@@ -134,7 +119,6 @@ class Database:
     
     @contextmanager
     def get_cursor(self):
-        """Context manager để lấy cursor an toàn"""
         # Kiểm tra và reconnect nếu cần
         if self._connection is None or self._connection.closed:
             self._connect()
@@ -172,13 +156,11 @@ class Database:
 # ================================================================
 
 class SessionRepository:
-    """Repository pattern cho Session operations"""
     
     def __init__(self, db: Database):
         self.db = db
     
     def create_session(self, session_id: str) -> bool:
-        """Tạo session mới"""
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute(
@@ -191,7 +173,6 @@ class SessionRepository:
             return False
     
     def get_session(self, session_id: str) -> Optional[Dict]:
-        """Lấy thông tin session"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM sessions WHERE session_id = %s",
@@ -200,7 +181,6 @@ class SessionRepository:
             return cursor.fetchone()
     
     def update_session(self, session_id: str) -> None:
-        """Cập nhật timestamp của session"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
@@ -208,7 +188,6 @@ class SessionRepository:
             )
     
     def delete_session(self, session_id: str) -> bool:
-        """Xóa session (cascade xóa messages)"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "DELETE FROM sessions WHERE session_id = %s",
@@ -217,7 +196,6 @@ class SessionRepository:
             return cursor.rowcount > 0
     
     def list_sessions(self, limit: int = 20) -> List[Dict]:
-        """Lấy danh sách sessions mới nhất"""
         with self.db.get_cursor() as cursor:
             cursor.execute("""
                 SELECT 
@@ -237,12 +215,11 @@ class SessionRepository:
             return cursor.fetchall()
 
 
-# ================================================================
+
 # MESSAGE OPERATIONS
-# ================================================================
+
 
 class MessageRepository:
-    """Repository pattern cho Message operations"""
     
     def __init__(self, db: Database):
         self.db = db
@@ -285,7 +262,6 @@ class MessageRepository:
             return message_id
     
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
-        """Lấy messages của session"""
         with self.db.get_cursor() as cursor:
             cursor.execute("""
                 SELECT * FROM messages 
@@ -304,7 +280,6 @@ class MessageRepository:
             return messages
     
     def get_history_text(self, session_id: str, max_turns: int = 5) -> str:
-        """Lấy lịch sử dạng text cho prompt"""
         with self.db.get_cursor() as cursor:
             cursor.execute("""
                 SELECT role, content FROM messages 
@@ -324,7 +299,6 @@ class MessageRepository:
             return "\n".join(lines)
     
     def delete_messages(self, session_id: str) -> int:
-        """Xóa tất cả messages của session"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "DELETE FROM messages WHERE session_id = %s",
@@ -333,7 +307,6 @@ class MessageRepository:
             return cursor.rowcount
     
     def count_messages(self, session_id: str) -> int:
-        """Đếm số messages trong session"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "SELECT COUNT(*) as count FROM messages WHERE session_id = %s",
@@ -343,19 +316,14 @@ class MessageRepository:
             return result['count'] if result else 0
 
 
-# ================================================================
-# USER OPERATIONS
-# ================================================================
 
+# USER OPERATIONS
 class UserRepository:
-    """Repository pattern cho User operations"""
-    
     def __init__(self, db: Database):
         self.db = db
     
     def create_user(self, email: str, password_hash: str, full_name: str,
                     role: str = 'user') -> Optional[int]:
-        """Tạo user mới, trả về user_id nếu thành công"""
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute("""
@@ -370,7 +338,6 @@ class UserRepository:
             return None
     
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        """Lấy user theo ID"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM users WHERE id = %s AND is_active = TRUE",
@@ -379,7 +346,6 @@ class UserRepository:
             return cursor.fetchone()
     
     def get_user_by_email(self, email: str) -> Optional[Dict]:
-        """Lấy user theo email (dùng cho login)"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM users WHERE email = %s",
@@ -388,7 +354,6 @@ class UserRepository:
             return cursor.fetchone()
     
     def update_user(self, user_id: int, **kwargs) -> bool:
-        """Cập nhật thông tin user"""
         if not kwargs:
             return False
         
@@ -415,7 +380,6 @@ class UserRepository:
             return cursor.rowcount > 0
     
     def update_last_login(self, user_id: int) -> None:
-        """Cập nhật thời gian đăng nhập cuối"""
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute(
@@ -427,7 +391,6 @@ class UserRepository:
             pass
     
     def delete_user(self, user_id: int) -> bool:
-        """Xóa user (soft delete - set is_active = FALSE)"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET is_active = FALSE WHERE id = %s",
@@ -436,7 +399,6 @@ class UserRepository:
             return cursor.rowcount > 0
     
     def list_users(self, limit: int = 50, include_inactive: bool = False) -> List[Dict]:
-        """Lấy danh sách users"""
         with self.db.get_cursor() as cursor:
             if include_inactive:
                 cursor.execute("""
@@ -454,7 +416,6 @@ class UserRepository:
             return cursor.fetchall()
     
     def email_exists(self, email: str) -> bool:
-        """Kiểm tra email đã tồn tại chưa"""
         with self.db.get_cursor() as cursor:
             cursor.execute(
                 "SELECT 1 FROM users WHERE email = %s LIMIT 1",
@@ -462,10 +423,6 @@ class UserRepository:
             )
             return cursor.fetchone() is not None
 
-
-# ================================================================
-# SINGLETON INSTANCES
-# ================================================================
 
 # Tạo instances
 db = Database()

@@ -3,11 +3,6 @@ from typing import Optional
 import os
 
 class Settings(BaseSettings):
-    """
-    Configuration Management cho RAG System
-    Load từ .env file hoặc environment variables
-    """
-    
     # ==================== PATHS ====================
     DATA_DIR: str = "data/legal_kb"
     LOG_FILE: str = "logs/chat_logs.jsonl"
@@ -24,38 +19,43 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str
     
     # ==================== RAG PARAMETERS ====================
-    # Số lượng documents retrieve (tăng để lấy nhiều context hơn)
+    # Số lượng documents retrieve
     TOP_K: int = 5
     
-    # Ngưỡng similarity (0-1). Dưới ngưỡng này = không liên quan
+    # Ngưỡng similarity (0-1).
     SIMILARITY_THRESHOLD: float = 0.25
     
-    # Chunking parameters (tăng để có context đầy đủ hơn)
+    # Chunking parameters 
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 100
     
     # ==================== EMBEDDING MODEL ====================
-    # BGE-M3: Multilingual model tốt nhất cho Tiếng Việt (BAAI)
-    # Hỗ trợ 100+ ngôn ngữ, SOTA performance
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
-    EMBEDDING_DIM: int = 1024  # BGE-M3 có 1024 dimensions
+    EMBEDDING_DIM: int = 1024 
     
     # ==================== LLM SETTINGS ====================
-    # API Key (load từ .env)
     OPENROUTER_API_KEY: Optional[str] = None
-    
-    # Model name (free tier)
+    # Model name 
     MODEL_NAME: str = "z-ai/glm-4.5-air:free"
     
     # Generation parameters
-    TEMPERATURE: float = 0.2  # 0 = deterministic, 1 = creative
+    TEMPERATURE: float = 0.2 
     MAX_TOKENS: int = 500
     
     # API endpoint
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     
+    # ==================== RERANKER SETTINGS ====================
+    USE_RERANKER: bool = True
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RERANKER_CANDIDATES: int = 15
+    RERANKER_TOP_K: int = 5
+    # Threshold trước rerank 
+    PRE_RERANK_THRESHOLD: float = 0.1
+    # Threshold sau rerank
+    POST_RERANK_THRESHOLD: float = 0.0
+
     # ==================== CONVERSATION MEMORY ====================
-    # Số lượng lượt hội thoại giữ lại (1 lượt = user + assistant)
     MAX_HISTORY_TURNS: int = 5
     
     # ==================== API SETTINGS ====================
@@ -63,13 +63,10 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     
     # CORS settings
-    CORS_ORIGINS: list = ["*"]  # Production nên chỉ định cụ thể
+    CORS_ORIGINS: list = ["*"]  
     
     # ==================== JWT / AUTH SETTINGS ====================
-    # # Secret key cho JWT
-
     JWT_SECRET_KEY: Optional[str] = None
-    # Algorithm mã hóa JWT
     JWT_ALGORITHM: str = "HS256"
     
     # Thời gian hết hạn token (phút)
@@ -83,12 +80,10 @@ class Settings(BaseSettings):
     EVAL_RESULTS_PATH: str = "eval/results.json"
     
     class Config:
-        # Load từ file .env trong root directory
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
         
-        # Extra fields sẽ bị ignore (không raise error)
         extra = "ignore"
 
 # ==================== SINGLETON INSTANCE ====================
@@ -109,7 +104,6 @@ def ensure_directories():
             print(f"Created directory: {directory}")
 
 def print_config():
-    """In ra cấu hình hiện tại (để debug)"""
     print("=" * 60)
     print("CURRENT CONFIGURATION")
     print("=" * 60)
@@ -145,6 +139,5 @@ def print_config():
     print("\n" + "=" * 60)
 
 if __name__ == "__main__":
-    # Test configuration
     ensure_directories()
     print_config()

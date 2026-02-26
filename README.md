@@ -33,6 +33,28 @@ Dữ liệu trong thư mục `data/` chỉ là **dữ liệu giả lập** phụ
       |   Qdrant  |              | PostgreSQL  |
       | VectorDB  |              |  (Memory)   |
       +-----------+              +-------------+
+
+RAG Pipeline:
+
+  Query
+    │
+    ▼
+  Embed Query (BGE-M3)
+    │
+    ▼
+  Qdrant Search (15 candidates)
+    │
+    ▼
+  Pre-filter Threshold (cosine ≥ 0.1)
+    │
+    ▼
+  CrossEncoder Rerank (BGE-Reranker-v2-M3)
+    │
+    ▼
+  Post-rerank Filter (score ≥ 0.0)
+    │
+    ▼
+  Top 5 Results → Build Context → LLM
 ```
 
 ## Công nghệ sử dụng
@@ -43,7 +65,8 @@ Dữ liệu trong thư mục `data/` chỉ là **dữ liệu giả lập** phụ
 | Frontend | Streamlit |
 | Vector Database | Qdrant |
 | Relational Database | PostgreSQL |
-| Embedding Model | BAAI/bge-m3 |
+| Embedding Model | BAAI/bge-m3 (1024 dims) |
+| Reranker | BAAI/bge-reranker-v2-m3 |
 | LLM | OpenRouter (configurable) |
 | Authentication | JWT + Bcrypt |
 
@@ -62,7 +85,6 @@ cd RAG-ChatBot
 
 python -m venv venv
 venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
 
 pip install -r requirements.txt
 ```
@@ -97,8 +119,16 @@ POSTGRES_DATABASE=rag_chatbot
 POSTGRES_USER=rag_user
 POSTGRES_PASSWORD=your_postgres_password
 
-# JWT Secret (thay doi trong production)
+# JWT Secret (thay đổi trong production)
 JWT_SECRET_KEY=your_super_secret_key_here
+
+# Reranker
+USE_RERANKER=True
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_CANDIDATES=15
+RERANKER_TOP_K=5
+PRE_RERANK_THRESHOLD=0.1
+POST_RERANK_THRESHOLD=0.0
 ```
 
 ### Bước 4: Nạp dữ liệu vào Vector DB
@@ -151,7 +181,7 @@ RAG-ChatBot/
 │   ├── llm.py           # LLM interaction
 │   ├── memory.py        # Conversation memory
 │   ├── models.py        # Pydantic models
-│   ├── rag_engine.py    # RAG core logic
+│   ├── rag_engine.py    # RAG core logic (Retrieval + Reranking)
 │   └── streamlit_app.py # Streamlit UI
 ├── data/
 │   └── legal_kb/        # PDF documents (demo data)
